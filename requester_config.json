@@ -1,0 +1,25 @@
+{
+  "count": 3,
+  "info": {
+    "names": [
+      "client0",
+      "client1",
+      "client2"
+    ],
+    "runtimes": [
+      30,
+      30,
+      30
+    ],
+    "chunksizes": [
+      10,
+      20,
+      30
+    ],
+    "filesizes": [
+      10,
+      10,
+      10
+    ]
+  }
+}

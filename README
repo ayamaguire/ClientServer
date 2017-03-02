@@ -1,0 +1,32 @@
+Client-Server Python Assignment, this time with python knowledge!
+
+Hello, and welcome aboard the USS TROGDOR. I am your captain --
+
+hang on, let me try again...
+
+
+This is a client server application! It is written in Python 2.7, using Flask!
+Beginning in a virtual environment or a clean Ubuntu 14.04 client, please run:
+sudo pip install -upgrade requirements.txt
+
+Or if you feel like making things harder for yourself, you can manually install Flask, requirements, and psutil.
+
+Then, to start the server, run:
+python FlaskServer.py
+
+To start the clients, run:
+python requester.py
+
+I'll tell you a secret: I named them that so I wouldn't accidentally tab-complete-delete them when removing logfiles.
+
+You can manage various settings in the configuration json files.
+When I started at SolidFire, I didn't know json was. I was all, "Who's Jason?" (Thanks, Ryan!)
+
+Some info:
+- The server is a simple Flask server. By default it launches on port 5000. If you change the setting
+    in the server file, change it in the clients file too.
+- The server uses threads to manage stuff; the client uses processes.
+- If you'd explained to me what the difference between threads and processes was when I first got here,
+    I would have almost understood it.
+- Everything is sent to the server via a request. Hearbeats, data, etc.
+- Processes are monitored using psutil.
