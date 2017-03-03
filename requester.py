@@ -13,7 +13,7 @@ import os
 # TODO: configurable log location
 # TODO: Client needs to roll over data write files
 
-URL = 'http://127.0.0.1:5000'
+
 log = logging.getLogger('client_app')
 log.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -157,8 +157,6 @@ class RequestClient(object):
                         .format(self.name))
 
     def run(self):
-
-
         self.send_request(signal=2, data="Hello!")
         log.debug("Logging client {} onto server...".format(self.name))
 
@@ -170,14 +168,12 @@ class RequestClient(object):
         p3.start()
         log.info("All processes started on {}".format(self.name))
 
-        # TODO: how do we log a goodbye? join doesn't do what we want it to do?
-
     def send_request(self, signal, data):
         now = time.time()
         payload = json.dumps({"name": self.name,
                               "signal": signal,
                               "time": now, "data": data})
-        r = requests.post(URL, data=payload)
+        requests.post(URL, data=payload)
         if signal == 0:
             log.debug("Sending heartbeat for time {}".format(now))
         elif signal == 1:
@@ -187,12 +183,13 @@ class RequestClient(object):
         else:
             log.debug("An unrecognized signal was sent! Signal: {}. Data: {}".format(signal, data))
 
-        return r
-
     def heartbeats(self):
         while abs(self.start - time.time()) < self.runtime:
             time.sleep(5)
-            self.send_request(0, None)
+            self.send_request(signal=0, data=None)
+        # wait ten seconds in case other processes need to finish.
+        time.sleep(10)
+        self.send_request(signal=2, data="Goodbye.")
 
     def data(self):
         while abs(self.start - time.time()) < self.runtime:
@@ -217,8 +214,17 @@ class RequestClient(object):
             self.send_proc_info(proc)
 
 
+
 if __name__ == "__main__":
 
+    # TODO: should this be in a try statement?
+    with open("requester_config.json", 'r') as c:
+        config = json.load(c)
+
+    PORT = config["port"]
+    URL = 'http://127.0.0.1:{}'.format(PORT)
+
+    # Make sure the given port is correct
     try:
         r = requests.get(URL)
         if r.status_code != 200:
@@ -228,11 +234,7 @@ if __name__ == "__main__":
         log.error("Server not up!")
         raise requests.ConnectionError
 
-    # TODO: should this be in a try statement?
-    with open("requester_config.json", 'r') as c:
-        config = json.load(c)
-
-    # TODO: Could this be prettier?
+    # Make sure we have the right information to run
     for key, val in config["info"].items():
         try:
             assert config["count"] == len(val)
@@ -241,6 +243,8 @@ if __name__ == "__main__":
                 .format(config["count"], len(val), key)
             raise
 
+
+    # Now initialize the clients with the given information
     clients = []
     for i in range(config["count"]):
         clients.append(RequestClient(
@@ -252,7 +256,3 @@ if __name__ == "__main__":
 
     for client in clients:
         client.run()
-
-    # Client1 = RequestClient("client1", runtime=30)
-    # Client2 = RequestClient("client2", runtime=30)
-    # Client1.heartbeats()

@@ -3,7 +3,7 @@ import logging
 import json
 import time
 import threading
-from multiprocessing import Process
+from multiprocessing import Process, Event
 
 # TODO: Docstrings, unit tests
 # TODO: Ensure files are being opened/made at the right time/if they don't exist
@@ -37,29 +37,79 @@ ch.setLevel(logging.WARNING)
 ch.setFormatter(formatter)
 log.addHandler(ch)
 
-# "client_connections" was too long to type all the time.
+# client_connections = {}
 CCs = {}
 
+first_request = Event()
+shutdown = Event()
 
-def client_monitor(servproc):
+
+def check(CC):
     while True:
-        if len(CCs) == 0:
-            # there are currently no clients, start the timer
-            log.warning("No clients are connected.")
-            start = time.time()
-            while abs(time.time() - start) < FINAL_WAIT:
-                time.sleep(10)
+        time.sleep(10)
+        # look for connections
+        active_clients = check_active_clients(CC)
 
-            # if FINAL_WAIT time has gone by, shutdown the server
-            if abs(time.time() - start) >= FINAL_WAIT:
-                log.warning("Time to shut down the server.")
-                servproc.terminate()
-                servproc.join()
-                return
+        while not active_clients:
+            # there are currently no clients, start the timer
+            elapsed = 10
+            start = time.time()
+            time.sleep(10)
+            active_clients = check_active_clients(CC)
+            log.warning("No clients are connected. Beginning shutdown timer.")
+            while abs(time.time() - start) > elapsed:
+                log.warning("There have been no active connections for {} seconds.".format(elapsed))
+                active_clients = check_active_clients(CC)
+                time.sleep(10)
+                elapsed += 10
+                if abs(time.time() - start) >= FINAL_WAIT:
+                    log.warning("There have been no active connections for the final timeout {} seconds"
+                                .format(FINAL_WAIT))
+                    shutdown.set()
+                    return
+
+
+def check_active_clients(CC):
+    for key, val in CC.items():
+        # log.warning("Found client {} with active val {}".format(val.name, val.active))
+        if val.active:
+            log.info("Active client found.")
+            return True
+    log.info("No active client found.")
+    return False
+
+
+def shutdown_monitor(servproc):
+    while True:
+        time.sleep(10)
+        if shutdown.is_set():
+            log.warning("Shutting down server.")
+            servproc.terminate()
+            servproc.join()
+            return
+
+
+def auto_shutdown(servproc):
+    start = time.time()
+    while not first_request.is_set():
+        time.sleep(10)
+        if abs(start - time.time()) >= FINAL_WAIT:
+            log.warning("No connections were received before the final wait time of {} seconds. "
+                        "Shutting down.".format(FINAL_WAIT))
+            shutdown.set()
+            return
+
+    # if first_request got set, let's get out of this thread
+    return
 
 
 @app.route("/", methods=['POST', 'GET'])
 def request_handler():
+    first_request.set()
+    # log.warning("First connection received - server is active and will not proceed to auto shutdown.")
+    check_thread = threading.Thread(target=check, args=(CCs,))
+    check_thread.start()
+
     rdata = request.data
     if len(rdata) == 0:
         log.info("Received a zero length request. Nothing to do here.")
@@ -83,33 +133,25 @@ def request_handler():
         raise
 
     if rname not in CCs.keys():
+
         # is it weird to store objects in a dictionary?
         # I dunno, I feel like this made everything less readable
         CCs[rname] = ClientManager(rname)
     if rsignal == 0:
         CCs[rname].current_heartbeat = rtime
-        log.info("Got a heartbeat at time {}".format(rtime))
+        log.info("Client {} sent a heartbeat at time {}".format(rname, rtime))
     if rsignal == 1:
         CCs[rname].current_data = rdata
-        log.info("Got some data: {}".format(rdata))
+        log.info("Client {} sent some data: {}".format(rname, rdata))
     if rsignal == 2:
         # this isn't really a warning, but it makes it pop up on the console
         log.warning("Client {} says {}".format(rname, rdata))
+
+        # Set the client to inactive, since it told us so politely
+        if rdata == "Goodbye.":
+            CCs[rname].active = False
+
     return "Hello"
-
-
-def shutdown_server():
-    func = request.environ.get('werkzeug.server.shutdown')
-    if func is None:
-        raise RuntimeError('Not running with the Werkzeug Server')
-    func()
-
-
-@app.route('/shutdown', methods=['POST'])
-def shutdown():
-    log.warning("Shutting down the server.")
-    shutdown_server()
-    return 'Server shutting down...'
 
 
 class ClientManager(object):
@@ -157,10 +199,6 @@ class ClientManager(object):
                                 .format(TIMEOUT, self.name))
                     self.active = False
 
-                    # The client failed, so we can remove it from the list.
-                    # This way, if it reconnects, we re-initialize
-                    CCs.pop(self.name)
-
                     # can't recover after this, so we might as well exit this thread
                     return
 
@@ -182,11 +220,13 @@ if __name__ == "__main__":
 
     # flask says this isn't safe for deployment.
     # If you are running this, is it deployment, or employment?
-    # app.run(port=PORT)
-
     server = Process(target=app.run, kwargs={'port': PORT})
     server.start()
 
-    t = threading.Thread(target=client_monitor, args=(server,))
-    t.start()
+    shutdown_thread = threading.Thread(target=shutdown_monitor, args=(server,))
+    auto_shutdown_thread = threading.Thread(target=auto_shutdown, args=(server,))
+    shutdown_thread.start()
+    auto_shutdown_thread.start()
 
+    # The server has to be a process so I can kill it.
+    # But they need to share CCs.

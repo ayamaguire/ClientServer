@@ -8,9 +8,9 @@
       "client2"
     ],
     "run_times": [
-      10,
-      10,
-      10
+      60,
+      50,
+      50
     ],
     "chunk_sizes": [
       10,
