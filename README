@@ -1,15 +1,11 @@
 Client-Server Python Assignment, this time with python knowledge!
 
-Hello, and welcome aboard the USS TROGDOR. I am your captain --
-
-hang on, let me try again...
-
-
 This is a client server application! It is written in Python 2.7, using Flask!
 Beginning in a virtual environment or a clean Ubuntu 14.04 client, please run:
 sudo pip install -upgrade requirements.txt
 
-Or if you feel like making things harder for yourself, you can manually install Flask, requirements, and psutil.
+Or if you feel like making things harder for yourself, you can manually install Flask, requirements,
+and psutil.
 
 Then, to start the server, run:
 python FlaskServer.py
@@ -22,13 +18,24 @@ You can manage various settings in the configuration json files.
 Some info:
 - The server is a simple Flask server. By default it launches on port 5000. If you change the setting
     in the server file, change it in the clients file too.
-- The server uses threads to manage stuff; the client uses processes.
-- If you'd explained to me what the difference between threads and processes was when I first got here,
-    I would have almost understood it.
+- The server uses threads and one to manage stuff; the client uses processes.
 - Everything is sent to the server via a request. Hearbeats, data, etc.
 - Processes are monitored using psutil.
 
 
-Things I didn't do or don't understand:
+Things I didn't do, don't understand, or would make better with more time:
 p.join() on my processes appeared to halt the running of the other processes. Not what I want at all.
 Since they ended on their own, I didn't worry about it too much.
+
+Sometimes the shutdown timer starts and prints a couple of messages before it successfully realizes
+that there are still connections and exits the timer. These messages are a bit confusing, but harmless.
+
+The server I am using is a Flask server with a few extra methods for handling shutdown and monitoring
+whether there are still client connections. I think it's a little clunky, but it works.
+
+I ran a stress test with 50 clients... it works but getting the clients up and going takes a while.
+Then again, who wants to run 50 clients locally to write chunks of data...? :)
+
+
+Fun things to do:
+Start the server, start the clients, then ctrl-c to kill the clients. Wait 120 seconds. :)

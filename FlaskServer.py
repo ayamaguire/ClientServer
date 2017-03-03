@@ -4,15 +4,13 @@ import json
 import time
 import threading
 from multiprocessing import Process, Event
+import CustomFlask
 
 # TODO: Docstrings, unit tests
 # TODO: Ensure files are being opened/made at the right time/if they don't exist
 # TODO: make sure the clients' name is printed in the log
 # TODO: MAKE IT CLASSY
 # TODO: Print a report after shutdown
-# TODO: Properly handle shutdown
-
-
 
 
 with open("FlaskServer_config.json", 'r') as c:
@@ -39,91 +37,17 @@ ch.setFormatter(formatter)
 log.addHandler(ch)
 
 
-
-first_request = Event()
-shutdown = Event()
-
-# client_connections = {}
 CCs = {}
+first_request = Event()
 
-
-class CustomFlask(Flask):
-
-    def run_with_monitors(self, port=5000):
-        monitor = threading.Thread(target=active_client_monitor, args=(CCs,))
-        monitor.start()
-        self.run(port=port)
-
-
-
-
-
-def active_client_monitor(CC):
-    while True:
-        active_clients = check_active_clients(CC)
-        if not active_clients:
-            shutdown_timer(CC)
-        time.sleep(10)
-
-
-def shutdown_timer(CC):
-    active_clients = check_active_clients(CC)
-    start = time.time()
-    elapsed = 0
-    log.warning("Entering shutdown timer.")
-    while not active_clients and elapsed < FINAL_WAIT:
-        time.sleep(10)
-        elapsed += 10
-        log.warning("Timer unbroken by new connections for {} seconds".format(elapsed))
-        active_clients = check_active_clients(CC)
-    if not active_clients and abs(start - time.time()) >= FINAL_WAIT:
-        log.warning("There have been no new connections for the final timeout {} seconds"
-                    .format(FINAL_WAIT))
-        shutdown.set()
-        return
-
-
-def check_active_clients(CC):
-    log.debug("Checking active clients!")
-    for key, val in CC.items():
-        log.debug("Found client {} with active val {}".format(val.name, val.active))
-        if val.active:
-            log.debug("Active client found.")
-            return True
-    log.debug("No active client found.")
-    return False
-
-
-def shutdown_monitor(servproc):
-    while True:
-        time.sleep(10)
-        if shutdown.is_set():
-            log.warning("Shutting down server.")
-            servproc.terminate()
-            servproc.join()
-            return
-
-
-def auto_shutdown(servproc):
-    start = time.time()
-    while not first_request.is_set():
-        time.sleep(10)
-        if abs(start - time.time()) >= FINAL_WAIT:
-            log.warning("No connections were received before the final wait time of {} seconds. "
-                        "Shutting down.".format(FINAL_WAIT))
-            shutdown.set()
-            return
-
-    # if first_request got set, let's get out of this thread
-    return
+app = CustomFlask.CustomFlask(__name__, CCs, FINAL_WAIT, log, first_request)
+app.debug = False
+app.use_reloader=False
 
 
 @app.route("/", methods=['POST', 'GET'])
 def request_handler():
     first_request.set()
-    # log.warning("First connection received - server is active and will not proceed to auto shutdown.")
-    # check_thread = threading.Thread(target=check, args=(CCs,))
-    # check_thread.start()
 
     rdata = request.data
     if len(rdata) == 0:
@@ -152,9 +76,6 @@ def request_handler():
         # is it weird to store objects in a dictionary?
         # I dunno, I feel like this made everything less readable
         CCs[rname] = ClientManager(rname)
-    if rsignal == 0:
-        CCs[rname].current_heartbeat = rtime
-        log.info("Client {} sent a heartbeat at time {}".format(rname, rtime))
     if rsignal == 1:
         CCs[rname].current_data = rdata
         log.info("Client {} sent some data: {}".format(rname, rdata))
@@ -165,6 +86,10 @@ def request_handler():
         # Set the client to inactive, since it told us so politely
         if rdata == "Goodbye.":
             CCs[rname].active = False
+    if rsignal == 0 and CCs[rname].active:
+        # we don't need to keep looking for heartbeats if we received a goodbye
+        CCs[rname].current_heartbeat = rtime
+        log.info("Client {} sent a heartbeat at time {}".format(rname, rtime))
 
     return "Hello"
 
@@ -202,7 +127,7 @@ class ClientManager(object):
         # this is clunky... I can't do "while self.current_heartbeat != 0"
         # because it *IS* 0 at some point
         while True:
-            if self.current_heartbeat != 0:
+            if self.current_heartbeat != 0 and self.active:
                 now = time.time()
                 while abs(now - self.current_heartbeat) > elapsed:
                     log.info("The client {} hasn't sent a heartbeat in over {} seconds.".format(self.name, elapsed))
@@ -232,19 +157,12 @@ class ClientManager(object):
 
 
 if __name__ == "__main__":
-
-    app = CustomFlask(__name__)
-    app.debug = False
-    app.use_reloader=False
-
-    # flask says this isn't safe for deployment.
-    # If you are running this, is it deployment, or employment?
     server = Process(target=app.run_with_monitors, kwargs={'port': PORT})
     server.start()
     log.warning("Server started here.")
 
-    shutdown_thread = threading.Thread(target=shutdown_monitor, args=(server,))
-    auto_shutdown_thread = threading.Thread(target=auto_shutdown, args=(server,))
+    shutdown_thread = threading.Thread(target=app.shutdown_monitor, args=(server,))
+    auto_shutdown_thread = threading.Thread(target=app.auto_shutdown)
     shutdown_thread.start()
     auto_shutdown_thread.start()
 

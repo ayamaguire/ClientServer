@@ -186,7 +186,7 @@ class RequestClient(object):
     def heartbeats(self):
         while abs(self.start - time.time()) < self.runtime:
             time.sleep(5)
-            self.send_request(signal=0, data=None)
+            self.send_request(signal=0, data="Heartbeat")
         # wait ten seconds in case other processes need to finish.
         time.sleep(10)
         self.send_request(signal=2, data="Goodbye.")
@@ -213,12 +213,11 @@ class RequestClient(object):
             time.sleep(10)
             self.send_proc_info(proc)
 
-
-
 if __name__ == "__main__":
 
     # TODO: should this be in a try statement?
-    with open("requester_config.json", 'r') as c:
+    # with open("requester_config.json", 'r') as c:
+    with open("stress_config.json", 'r') as c:
         config = json.load(c)
 
     PORT = config["port"]
