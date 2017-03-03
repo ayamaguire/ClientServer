@@ -3,12 +3,14 @@ import logging
 import json
 import time
 import threading
+from multiprocessing import Process
 
 # TODO: Docstrings, unit tests
-# TODO: Configurable server (JSON)
 # TODO: Ensure files are being opened/made at the right time/if they don't exist
-# TODO: Handle signal 2 for client info (log on, log off, rollover)
 # TODO: make sure the clients' name is printed in the log
+# TODO: MAKE IT CLASSY
+# TODO: Print a report after shutdown
+# TODO: Properly handle shutdown
 
 app = Flask(__name__)
 
@@ -17,7 +19,7 @@ with open("FlaskServer_config.json", 'r') as c:
 
 TIMEOUT = config["timeout"]
 PORT = config["port"]
-FINAL_TIMEOUT = config["final_timeout"]
+FINAL_WAIT = config["final_wait"]
 
 log = logging.getLogger('server_app')
 log.setLevel(logging.DEBUG)
@@ -38,11 +40,23 @@ log.addHandler(ch)
 # "client_connections" was too long to type all the time.
 CCs = {}
 
-# there are three options for the Server State (SS):
-# CCs is empty, and there have been no connections;
-# CCs is non-empty (there are client connections);
-# CCs is empty, and there *have* been connections; time to shutdown.
-SS = 0
+
+def client_monitor(servproc):
+    while True:
+        if len(CCs) == 0:
+            # there are currently no clients, start the timer
+            log.warning("No clients are connected.")
+            start = time.time()
+            while abs(time.time() - start) < FINAL_WAIT:
+                time.sleep(10)
+
+            # if FINAL_WAIT time has gone by, shutdown the server
+            if abs(time.time() - start) >= FINAL_WAIT:
+                log.warning("Time to shut down the server.")
+                servproc.terminate()
+                servproc.join()
+                return
+
 
 @app.route("/", methods=['POST', 'GET'])
 def request_handler():
@@ -93,6 +107,7 @@ def shutdown_server():
 
 @app.route('/shutdown', methods=['POST'])
 def shutdown():
+    log.warning("Shutting down the server.")
     shutdown_server()
     return 'Server shutting down...'
 
@@ -165,5 +180,13 @@ class ClientManager(object):
 
 if __name__ == "__main__":
 
-    # flask says this isn't safe for deployment. Is you running this deployment, or employment?
-    app.run(port=PORT)
+    # flask says this isn't safe for deployment.
+    # If you are running this, is it deployment, or employment?
+    # app.run(port=PORT)
+
+    server = Process(target=app.run, kwargs={'port': PORT})
+    server.start()
+
+    t = threading.Thread(target=client_monitor, args=(server,))
+    t.start()
+
