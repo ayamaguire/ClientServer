@@ -6,17 +6,22 @@
       "client1",
       "client2"
     ],
-    "runtimes": [
+    "run_times": [
       30,
       30,
       30
     ],
-    "chunksizes": [
+    "chunk_sizes": [
       10,
-      20,
-      30
+      10,
+      10
     ],
-    "filesizes": [
+    "file_sizes": [
+      20,
+      30,
+      50
+    ],
+    "intervals":[
       10,
       10,
       10

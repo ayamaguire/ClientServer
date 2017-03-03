@@ -7,12 +7,26 @@ import threading
 # TODO: Docstrings, unit tests
 # TODO: Configurable server (JSON)
 # TODO: Ensure files are being opened/made at the right time/if they don't exist
+# TODO: Handle signal 2 for client info (log on, log off, rollover)
+# TODO: make sure the clients' name is printed in the log
 
 app = Flask(__name__)
 
-log = logging.getLogger()
+log = logging.getLogger('server_app')
 log.setLevel(logging.DEBUG)
-log.addHandler(logging.FileHandler('server.log', mode='w'))
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+fh = logging.FileHandler('server.log', mode='w')
+fh.setLevel(logging.DEBUG)
+fh.setFormatter(formatter)
+log.addHandler(fh)
+
+ch = logging.StreamHandler()
+
+# you can turn this down, or off, since everything is in the log. I like to see updates on the console.
+ch.setLevel(logging.WARNING)
+ch.setFormatter(formatter)
+log.addHandler(ch)
 
 # "client_connections" was too long to type all the time.
 CCs = {}
