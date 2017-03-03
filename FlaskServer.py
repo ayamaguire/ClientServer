@@ -13,13 +13,7 @@ from multiprocessing import Process, Event
 # TODO: Properly handle shutdown
 
 
-class CustomFlask(Flask):
-    def start_monitors(self):
-        check_thread = threading.Thread(target=check, args=(CCs,))
-        check_thread.start()
 
-
-app = CustomFlask(__name__)
 
 with open("FlaskServer_config.json", 'r') as c:
     config = json.load(c)
@@ -44,45 +38,59 @@ ch.setLevel(logging.WARNING)
 ch.setFormatter(formatter)
 log.addHandler(ch)
 
-# client_connections = {}
-CCs = {}
+
 
 first_request = Event()
 shutdown = Event()
 
+# client_connections = {}
+CCs = {}
 
-def check(CC):
+
+class CustomFlask(Flask):
+
+    def run_with_monitors(self, port=5000):
+        monitor = threading.Thread(target=active_client_monitor, args=(CCs,))
+        monitor.start()
+        self.run(port=port)
+
+
+
+
+
+def active_client_monitor(CC):
     while True:
-        time.sleep(10)
-        # look for connections
         active_clients = check_active_clients(CC)
+        if not active_clients:
+            shutdown_timer(CC)
+        time.sleep(10)
 
-        while not active_clients:
-            # there are currently no clients, start the timer
-            elapsed = 10
-            start = time.time()
-            time.sleep(10)
-            active_clients = check_active_clients(CC)
-            log.warning("No clients are connected. Beginning shutdown timer.")
-            while abs(time.time() - start) > elapsed:
-                log.warning("There have been no active connections for {} seconds.".format(elapsed))
-                active_clients = check_active_clients(CC)
-                time.sleep(10)
-                elapsed += 10
-                if abs(time.time() - start) >= FINAL_WAIT:
-                    log.warning("There have been no active connections for the final timeout {} seconds"
-                                .format(FINAL_WAIT))
-                    shutdown.set()
-                    return
+
+def shutdown_timer(CC):
+    active_clients = check_active_clients(CC)
+    start = time.time()
+    elapsed = 0
+    log.warning("Entering shutdown timer.")
+    while not active_clients and elapsed < FINAL_WAIT:
+        time.sleep(10)
+        elapsed += 10
+        log.warning("Timer unbroken by new connections for {} seconds".format(elapsed))
+        active_clients = check_active_clients(CC)
+    if not active_clients and abs(start - time.time()) >= FINAL_WAIT:
+        log.warning("There have been no new connections for the final timeout {} seconds"
+                    .format(FINAL_WAIT))
+        shutdown.set()
+        return
 
 
 def check_active_clients(CC):
+    log.debug("Checking active clients!")
     for key, val in CC.items():
-        # log.warning("Found client {} with active val {}".format(val.name, val.active))
+        log.debug("Found client {} with active val {}".format(val.name, val.active))
         if val.active:
-            log.info("Active client found.")
+            log.debug("Active client found.")
             return True
-    log.info("No active client found.")
+    log.debug("No active client found.")
     return False
 
 
@@ -225,17 +233,22 @@ class ClientManager(object):
 
 if __name__ == "__main__":
 
+    app = CustomFlask(__name__)
+    app.debug = False
+    app.use_reloader=False
+
     # flask says this isn't safe for deployment.
     # If you are running this, is it deployment, or employment?
-    server = Process(target=app.run, kwargs={'port': PORT})
+    server = Process(target=app.run_with_monitors, kwargs={'port': PORT})
     server.start()
+    log.warning("Server started here.")
 
     shutdown_thread = threading.Thread(target=shutdown_monitor, args=(server,))
     auto_shutdown_thread = threading.Thread(target=auto_shutdown, args=(server,))
     shutdown_thread.start()
     auto_shutdown_thread.start()
 
-    app.start_monitors()
+    # app.start_monitors()
 
     # The server has to be a process so I can kill it.
     # But they need to share CCs.

@@ -32,7 +32,7 @@ log.addHandler(ch)
 log.info("Logger for clients")
 
 
-# Helper functions! Maybe I should move these...
+# Helper functions!
 
 def files_gen(base_name):
     # we get up early just to start crankin' the generator
