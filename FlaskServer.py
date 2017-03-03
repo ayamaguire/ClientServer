@@ -12,7 +12,14 @@ from multiprocessing import Process, Event
 # TODO: Print a report after shutdown
 # TODO: Properly handle shutdown
 
-app = Flask(__name__)
+
+class CustomFlask(Flask):
+    def start_monitors(self):
+        check_thread = threading.Thread(target=check, args=(CCs,))
+        check_thread.start()
+
+
+app = CustomFlask(__name__)
 
 with open("FlaskServer_config.json", 'r') as c:
     config = json.load(c)
@@ -107,8 +114,8 @@ def auto_shutdown(servproc):
 def request_handler():
     first_request.set()
     # log.warning("First connection received - server is active and will not proceed to auto shutdown.")
-    check_thread = threading.Thread(target=check, args=(CCs,))
-    check_thread.start()
+    # check_thread = threading.Thread(target=check, args=(CCs,))
+    # check_thread.start()
 
     rdata = request.data
     if len(rdata) == 0:
@@ -227,6 +234,8 @@ if __name__ == "__main__":
     auto_shutdown_thread = threading.Thread(target=auto_shutdown, args=(server,))
     shutdown_thread.start()
     auto_shutdown_thread.start()
+
+    app.start_monitors()
 
     # The server has to be a process so I can kill it.
     # But they need to share CCs.
