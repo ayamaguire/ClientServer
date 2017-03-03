@@ -157,14 +157,10 @@ class RequestClient(object):
                         .format(self.name))
 
     def run(self):
-        try:
-            r = requests.get(URL)
-            if r.status_code != 200:
-                log.error("Server appears to not be up! Status code {} received.".format(r.status_code))
-                raise StandardError
-        except requests.ConnectionError:
-            log.error("Server not up!")
-            raise requests.ConnectionError
+
+
+        self.send_request(signal=2, data="Hello!")
+        log.debug("Logging client {} onto server...".format(self.name))
 
         p1 = multiprocessing.Process(target=self.heartbeats)
         p2 = multiprocessing.Process(target=self.data)
@@ -190,6 +186,8 @@ class RequestClient(object):
             log.debug("Sending client information for time: {}. Information: ".format(now, data))
         else:
             log.debug("An unrecognized signal was sent! Signal: {}. Data: {}".format(signal, data))
+
+        return r
 
     def heartbeats(self):
         while abs(self.start - time.time()) < self.runtime:
@@ -220,6 +218,15 @@ class RequestClient(object):
 
 
 if __name__ == "__main__":
+
+    try:
+        r = requests.get(URL)
+        if r.status_code != 200:
+            log.error("Server appears to not be up! Status code {} received.".format(r.status_code))
+            raise StandardError
+    except requests.ConnectionError:
+        log.error("Server not up!")
+        raise requests.ConnectionError
 
     # TODO: should this be in a try statement?
     with open("requester_config.json", 'r') as c:
