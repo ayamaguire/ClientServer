@@ -36,6 +36,15 @@ whether there are still client connections. I think it's a little clunky, but it
 I ran a stress test with 50 clients... it works but getting the clients up and going takes a while.
 Then again, who wants to run 50 clients locally to write chunks of data...? :)
 
+I tested this a lot manually by just running everything and breaking things into smaller pieces which
+were testable. However, I am lacking official unit tests. :(
+
+I got information using psutils, but I didn't break it out very much or make it more human readable.
+I would have, but making the shutdown clean ended up taking priority.
+
+The first time we open a new data file, we say we are "Rolling over a new data file". Not exactly
+False, but not True either. Could be fixed.
+
 
 Fun things to do:
 Start the server, start the clients, then ctrl-c to kill the clients. Wait 120 seconds. :)

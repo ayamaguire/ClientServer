@@ -99,9 +99,12 @@ def assert_rollover(chunk_size, max_size, interval, runtime):
     :param int runtime: how many seconds to run for
     :return bool: Whether or not we will roll over at least twice
     """
-    writes = runtime/interval
-    total = writes * chunk_size
-    if total >= max_size * 2:
+    # a write size of 2 and file size of 5 means files will get filled to 2*2 = 4
+    writes_per_file = max_size / chunk_size
+
+    writes = runtime / interval - 1
+
+    if writes > writes_per_file * 2:
         return True
     else:
         return False
@@ -139,12 +142,17 @@ def get_proc_info(proc):
 
 
 class RequestClient(object):
+    """ A class for initializing a client which will send heartbeats, write data, and monitor the
+    process which sends data.
+    """
 
     def __init__(self, name, runtime=120, chunk_size=1000, file_size=1000, data_interval=10):
         self.name = name
         self.runtime = runtime
         self.start = time.time()
         self.chunk_size = chunk_size
+        if chunk_size < 10000000:
+            log.warning("The given chunk size for client {} is smaller than 10MB.".format(self.name))
         self.file_size = file_size
         self.data_interval = data_interval
         self.base_name = 'data_{}'.format(self.name)
@@ -157,6 +165,8 @@ class RequestClient(object):
                         .format(self.name))
 
     def run(self):
+        """ Kick off heartbeats, data writer, and data writer monitor in separate processes
+        """
         self.send_request(signal=2, data="Hello!")
         log.debug("Logging client {} onto server...".format(self.name))
 
@@ -169,6 +179,10 @@ class RequestClient(object):
         log.info("All processes started on {}".format(self.name))
 
     def send_request(self, signal, data):
+        """ Format a request to send to the server
+        :param int signal: What kind of request (heartbeat, data, client info)
+        :param str data: Data in addition to signal
+        """
         now = time.time()
         payload = json.dumps({"name": self.name,
                               "signal": signal,
@@ -184,6 +198,8 @@ class RequestClient(object):
             log.debug("An unrecognized signal was sent! Signal: {}. Data: {}".format(signal, data))
 
     def heartbeats(self):
+        """ At intervals of 5 sec, send a heartbeat to the server
+        """
         while abs(self.start - time.time()) < self.runtime:
             time.sleep(5)
             self.send_request(signal=0, data="Heartbeat")
@@ -192,6 +208,8 @@ class RequestClient(object):
         self.send_request(signal=2, data="Goodbye.")
 
     def data(self):
+        """ At a configurable interval, write random data to files
+        """
         while abs(self.start - time.time()) < self.runtime:
             time.sleep(self.data_interval)
 
@@ -202,6 +220,9 @@ class RequestClient(object):
                 self.send_request(signal=2, data="Data writer has rolled over to a new file.")
 
     def send_proc_info(self, proc):
+        """ Gather info on the given process and send that data to the server.
+        :param  multiprocessing.Process proc: the process to monitor
+        """
         thread_info = get_proc_info(proc)
 
         # if the PID went to None, thread_info will be None.
@@ -209,6 +230,9 @@ class RequestClient(object):
             self.send_request(signal=1, data=str(thread_info))
 
     def monitor(self, proc):
+        """ At intervals of 10 sec, run send_proc_info to gather and send process info
+        :param  multiprocessing.Process proc: the process to monitor
+        """
         while abs(self.start - time.time()) < self.runtime:
             time.sleep(10)
             self.send_proc_info(proc)
@@ -216,8 +240,7 @@ class RequestClient(object):
 if __name__ == "__main__":
 
     # TODO: should this be in a try statement?
-    # with open("requester_config.json", 'r') as c:
-    with open("stress_config.json", 'r') as c:
+    with open("requester_config.json", "r") as c:
         config = json.load(c)
 
     PORT = config["port"]
@@ -242,7 +265,6 @@ if __name__ == "__main__":
                 .format(config["count"], len(val), key)
             raise
 
-
     # Now initialize the clients with the given information
     clients = []
     for i in range(config["count"]):
@@ -253,5 +275,7 @@ if __name__ == "__main__":
             file_size=config["info"]["file_sizes"][i]
         ))
 
+    # run them all!
+    # Stress testing revealed this could be faster. This would be a future improvement.
     for client in clients:
         client.run()

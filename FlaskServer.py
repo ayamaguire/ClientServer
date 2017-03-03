@@ -12,14 +12,6 @@ import CustomFlask
 # TODO: MAKE IT CLASSY
 # TODO: Print a report after shutdown
 
-
-with open("FlaskServer_config.json", 'r') as c:
-    config = json.load(c)
-
-TIMEOUT = config["timeout"]
-PORT = config["port"]
-FINAL_WAIT = config["final_wait"]
-
 log = logging.getLogger('server_app')
 log.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -36,6 +28,14 @@ ch.setLevel(logging.WARNING)
 ch.setFormatter(formatter)
 log.addHandler(ch)
 
+# These are configurable in the json file
+with open("FlaskServer_config.json", 'r') as c:
+    config = json.load(c)
+
+TIMEOUT = config["timeout"]
+PORT = config["port"]
+FINAL_WAIT = config["final_wait"]
+
 
 CCs = {}
 first_request = Event()
@@ -44,9 +44,12 @@ app = CustomFlask.CustomFlask(__name__, CCs, FINAL_WAIT, log, first_request)
 app.debug = False
 app.use_reloader=False
 
-
+# This is the messiest thing in this whole project. :/
 @app.route("/", methods=['POST', 'GET'])
 def request_handler():
+    """ Function for handling the requests that are sent to the server.
+    :return: Sets what to display on the browser at our server's port. This doesn't matter.
+    """
     first_request.set()
 
     rdata = request.data
@@ -95,6 +98,8 @@ def request_handler():
 
 
 class ClientManager(object):
+    """ Class for keeping track of whether a client is alive, and writing data streams
+    """
 
     def __init__(self, name):
         self.name = name
@@ -130,13 +135,14 @@ class ClientManager(object):
             if self.current_heartbeat != 0 and self.active:
                 now = time.time()
                 while abs(now - self.current_heartbeat) > elapsed:
-                    log.info("The client {} hasn't sent a heartbeat in over {} seconds.".format(self.name, elapsed))
+                    log.info("The client {} hasn't sent a heartbeat in over {} seconds."
+                             .format(self.name, elapsed))
                     time.sleep(10)
                     elapsed += 10
 
                 if abs(now - self.current_heartbeat) > TIMEOUT:
-                    log.warning("No heartbeat received for {} seconds - marking client {} as failed."
-                                .format(TIMEOUT, self.name))
+                    log.warning("Client {}: No heartbeat received for {} seconds - marking as failed."
+                                .format(self.name, TIMEOUT))
                     self.active = False
 
                     # can't recover after this, so we might as well exit this thread
@@ -157,6 +163,9 @@ class ClientManager(object):
 
 
 if __name__ == "__main__":
+
+    # Start up the server in a process, and then send that process to the shutdown monitors.
+    # This way we can kill it.
     server = Process(target=app.run_with_monitors, kwargs={'port': PORT})
     server.start()
     log.warning("Server started here.")
@@ -165,8 +174,3 @@ if __name__ == "__main__":
     auto_shutdown_thread = threading.Thread(target=app.auto_shutdown)
     shutdown_thread.start()
     auto_shutdown_thread.start()
-
-    # app.start_monitors()
-
-    # The server has to be a process so I can kill it.
-    # But they need to share CCs.

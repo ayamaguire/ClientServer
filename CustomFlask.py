@@ -7,6 +7,8 @@ shutdown = Event()
 
 
 class CustomFlask(Flask):
+    """ Essentially just a Flask server, but with a few extra methods for shutting down.
+    """
 
     def __init__(self, name, client_conns_dict, final_wait, log, first_request):
         self.CC = client_conns_dict
@@ -16,6 +18,9 @@ class CustomFlask(Flask):
         super(CustomFlask, self).__init__(name)
 
     def run_with_monitors(self, port=5000):
+        """ Run the normal "Flask.run" command, but also kick off a monitor thread.
+        :param int port: which port to run the server on.
+        """
         monitor = threading.Thread(target=self.active_client_monitor)
         monitor.start()
 
@@ -24,6 +29,8 @@ class CustomFlask(Flask):
         self.run(port=port)
 
     def active_client_monitor(self):
+        """ If there are active clients, just sleep and start over; if not, enter shutdown timer.
+        """
         while True:
             active_clients = self.check_active_clients()
             if not active_clients:
@@ -31,6 +38,8 @@ class CustomFlask(Flask):
             time.sleep(10)
 
     def shutdown_timer(self):
+        """ If there are no active clients, run for a configurable length of time and then shut down.
+        """
         active_clients = self.check_active_clients()
         start = time.time()
         time.sleep(10)
@@ -47,7 +56,9 @@ class CustomFlask(Flask):
             shutdown.set()
             return
 
-    def check_active_clients(self, ):
+    def check_active_clients(self):
+        """ Look at the Client Connections request dictionary and see if the clients are listed as active
+        """
         self.log.debug("Checking active clients!")
         for key, val in self.CC.items():
             self.log.debug("Found client {} with active val {}".format(val.name, val.active))
@@ -58,6 +69,11 @@ class CustomFlask(Flask):
         return False
 
     def shutdown_monitor(self, servproc):
+        """ Check if the shutdown Event has been set; if so, terminate the given process.
+        :param multiprocessing.Process servproc: The process to terminate. (We expect this to be the
+        process which kicked off "run_with_monitors")
+        :return: None, just exit
+        """
         while True:
             time.sleep(10)
             if shutdown.is_set():
@@ -67,6 +83,10 @@ class CustomFlask(Flask):
                 return
 
     def auto_shutdown(self):
+        """ If there was never a first request, we should shut down the server after a configurable
+        length of time.
+        :return: None, just exit
+        """
         start = time.time()
         while not self.first_request.is_set():
             time.sleep(10)
