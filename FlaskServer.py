@@ -4,12 +4,10 @@ import json
 import time
 import threading
 from multiprocessing import Process, Event
-import CustomFlask
+from CustomFlask import CustomFlask, Counter
 
-# TODO: Docstrings, unit tests
-# TODO: Ensure files are being opened/made at the right time/if they don't exist
+# TODO: Unit tests
 # TODO: make sure the clients' name is printed in the log
-# TODO: MAKE IT CLASSY
 # TODO: Print a report after shutdown
 
 log = logging.getLogger('server_app')
@@ -39,10 +37,24 @@ FINAL_WAIT = config["final_wait"]
 
 CCs = {}
 first_request = Event()
+is_shutdown = Event()
+report = {"total_requests": Counter(0),
+          "total_connections": Counter(0),
+          "total_timeouts": Counter(0),
+          "total_goodbyes": Counter(0)}
 
-app = CustomFlask.CustomFlask(__name__, CCs, FINAL_WAIT, log, first_request)
+app = CustomFlask(__name__, CCs, FINAL_WAIT, log, first_request, is_shutdown)
 app.debug = False
 app.use_reloader=False
+
+
+def print_report(is_shutdown_event):
+    while not is_shutdown_event.is_set():
+        time.sleep(10)
+    report_to_print = {}
+    for key, val in report.items():
+        report_to_print[key] = val.value()
+    log.warning("Usage report: {}".format(report_to_print))
 
 # This is the messiest thing in this whole project. :/
 @app.route("/", methods=['POST', 'GET'])
@@ -50,7 +62,10 @@ def request_handler():
     """ Function for handling the requests that are sent to the server.
     :return: Sets what to display on the browser at our server's port. This doesn't matter.
     """
+    # ideally there would be a way to avoid setting this every time there's a new request
+    # it doesn't matter, just a wasted operation.
     first_request.set()
+    report["total_requests"].increment()
 
     rdata = request.data
     if len(rdata) == 0:
@@ -78,7 +93,9 @@ def request_handler():
 
         # is it weird to store objects in a dictionary?
         # I dunno, I feel like this made everything less readable
+        # Something about this whole thing is weird, but it works? Can we talk about it??
         CCs[rname] = ClientManager(rname)
+        report["total_connections"].increment()
     if rsignal == 1:
         CCs[rname].current_data = rdata
         log.info("Client {} sent some data: {}".format(rname, rdata))
@@ -89,6 +106,7 @@ def request_handler():
         # Set the client to inactive, since it told us so politely
         if rdata == "Goodbye.":
             CCs[rname].active = False
+            report["total_goodbyes"].increment()
     if rsignal == 0 and CCs[rname].active:
         # we don't need to keep looking for heartbeats if we received a goodbye
         CCs[rname].current_heartbeat = rtime
@@ -144,6 +162,7 @@ class ClientManager(object):
                     log.warning("Client {}: No heartbeat received for {} seconds - marking as failed."
                                 .format(self.name, TIMEOUT))
                     self.active = False
+                    report["total_timeouts"].increment()
 
                     # can't recover after this, so we might as well exit this thread
                     return
@@ -172,5 +191,7 @@ if __name__ == "__main__":
 
     shutdown_thread = threading.Thread(target=app.shutdown_monitor, args=(server,))
     auto_shutdown_thread = threading.Thread(target=app.auto_shutdown)
+    print_report_thread = threading.Thread(target=print_report, args=(is_shutdown,))
     shutdown_thread.start()
     auto_shutdown_thread.start()
+    print_report_thread.start()

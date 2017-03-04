@@ -1,20 +1,22 @@
 import time
-from multiprocessing import Event
+from multiprocessing import Event, Value, Lock
 import threading
 from flask import Flask
 
 shutdown = Event()
 
 
+
 class CustomFlask(Flask):
     """ Essentially just a Flask server, but with a few extra methods for shutting down.
     """
 
-    def __init__(self, name, client_conns_dict, final_wait, log, first_request):
+    def __init__(self, name, client_conns_dict, final_wait, log, first_request, is_shutdown_event):
         self.CC = client_conns_dict
         self.final_wait = final_wait
         self.log = log
         self.first_request = first_request
+        self.is_shutdown_event = is_shutdown_event
         super(CustomFlask, self).__init__(name)
 
     def run_with_monitors(self, port=5000):
@@ -80,6 +82,7 @@ class CustomFlask(Flask):
                 self.log.warning("Shutting down server.")
                 servproc.terminate()
                 servproc.join()
+                self.is_shutdown_event.set()
                 return
 
     def auto_shutdown(self):
@@ -98,3 +101,30 @@ class CustomFlask(Flask):
 
         # if first_request got set, let's get out of this thread
         return
+
+
+# OK, I'll be honest. I only truly grasped the complexity of printing out a report *AFTER* I'd done...
+# Literally everything else.
+
+# SO. Here we go, with a multiprocessing counter function for keeping track of things.
+# If you're thinking, "Her code would be cleaner if she's used to this to keep track of clients, too."
+# YOU'D BE RIGHT. but it's too late. I'm not changing it now.
+
+class Counter(object):
+    """ This class is just like an int... but one you can pass in between processes. That's it.
+    """
+    def __init__(self, init_val=0):
+        self.val = Value('i', init_val)
+        self.lock = Lock()
+
+    def increment(self):
+        """ Acquire lock, increment by one
+        """
+        with self.lock:
+            self.val.value += 1
+
+    def value(self):
+        """ Acquire lock, return value
+        """
+        with self.lock:
+            return self.val.value

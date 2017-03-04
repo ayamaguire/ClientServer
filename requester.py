@@ -7,11 +7,9 @@ import psutil
 import os
 
 # TODO: Request headers!
-# TODO: Docstrings!
 # TODO: Unit Tests!
 # TODO: Log different clients to different logfiles
 # TODO: configurable log location
-# TODO: Client needs to roll over data write files
 
 
 log = logging.getLogger('client_app')
