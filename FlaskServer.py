@@ -134,7 +134,7 @@ class ClientManager(object):
         # When we initialize, the client is active
         self.active = True
 
-        log.warning("Initializing client {}!".format(self.name))
+        log.debug("Initializing client {}!".format(self.name))
         t1 = threading.Thread(target=self.heartbeat_monitor)
         t2 = threading.Thread(target=self.data_monitor)
         t1.start()

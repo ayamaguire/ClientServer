@@ -10,6 +10,7 @@ import os
 # TODO: Unit Tests!
 # TODO: Log different clients to different logfiles
 # TODO: configurable log location
+# TODO: Parse psutil info better
 
 
 log = logging.getLogger('client_app')
@@ -46,19 +47,23 @@ def files_gen(base_name):
         yield new_file
 
 
-def get_next_file(base_name, chunk_size, max_size):
+def get_next_file(current_file, base_name, chunk_size, max_size, gen):
     """ Determine if it's time to roll over to the next file, knowing the size of the next write
     :param str base_name: the naming schema for the file
     :param int chunk_size: the number of byes being written at a time
     :param int max_size: the max size of the file
-    :return (str, bool): the file to write to and whether we rolled over or not
+    :param generator gen: the instantiation of the generator which counts up files
+    :return (str, bool, f): the file to write to, whether we rolled over or not, and the generator
     """
-    f = files_gen(base_name)
-    write_file = f.next()
     rolling = False
-    if os.path.exists(write_file) and os.path.getsize(write_file) > max_size - chunk_size:
-        write_file = f.next()
+
+    if not current_file:
+        write_file = gen.next()
+    elif os.path.getsize(current_file) > max_size - chunk_size:
+        write_file = gen.next()
         rolling = True
+    else:
+        write_file = current_file
     return write_file, rolling
 
 
@@ -75,16 +80,18 @@ def rand_write(datafile, chunk_size):
         df.write(os.urandom(chunk_size))
 
 
-def write_and_roll(base_name, chunk_size, max_size):
+def write_and_roll(write_file, base_name, chunk_size, max_size, gen):
     """ Write data to the correct file, rolling over as appropriate
     :param str base_name: the naming schema for the files
     :param int chunk_size: the number of byes being written at a time
     :param int max_size: the max size of the files
+    :param generator gen: the generator which counts up files
     :return bool: whether the file rolled during this write, so this can be logged and sent to the server
     """
-    current_file, rolling = get_next_file(base_name, chunk_size, max_size)
+    current_file = write_file
+    current_file, rolling = get_next_file(current_file, base_name, chunk_size, max_size, gen=gen)
     rand_write(current_file, chunk_size)
-    return rolling
+    return current_file, rolling
 
 
 def assert_rollover(chunk_size, max_size, interval, runtime):
@@ -153,7 +160,10 @@ class RequestClient(object):
             log.warning("The given chunk size for client {} is smaller than 10MB.".format(self.name))
         self.file_size = file_size
         self.data_interval = data_interval
+        self.current_file = None
+
         self.base_name = 'data_{}'.format(self.name)
+        self.gen = files_gen(self.base_name)
 
         if not assert_rollover(chunk_size=self.chunk_size,
                                max_size=self.file_size,
@@ -212,7 +222,8 @@ class RequestClient(object):
             time.sleep(self.data_interval)
 
             log.info("Writing {} byes of data".format(self.chunk_size))
-            rolling = write_and_roll(self.base_name, self.chunk_size, self.file_size)
+            self.current_file, rolling = write_and_roll(self.current_file, self.base_name,
+                                                        self.chunk_size, self.file_size, self.gen)
             if rolling:
                 log.info("Rolling over a new file.")
                 self.send_request(signal=2, data="Data writer has rolled over to a new file.")
