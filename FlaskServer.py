@@ -62,6 +62,10 @@ def print_report(is_shutdown_event):
 
 
 def assert_request_format(request_data):
+    """ Ensure the requests have the four required fields.
+    :param dict request_data: dictionary from JSON request
+    :return bool: whether the request has the proper format or not
+    """
     if "name" and "time" and "signal" and "data" in request_data.keys():
         return True
     else:
@@ -71,7 +75,11 @@ def assert_request_format(request_data):
 
 
 def map_requests(request_data, client_conns_dict):
-
+    """ Do the correct thing with a request given its data and signal
+    :param dict request_data: dictionary from JSON request
+    :param client_conns_dict: the dictionary of client connections
+    :return: None
+    """
     good_request = assert_request_format(request_data)
     if not good_request:
         return
@@ -165,7 +173,7 @@ class ClientManager(object):
         t2.start()
 
     def heartbeat_monitor(self):
-        """ After the first heartbeat, self.hearbeat will be the timestamp of the last heartbeat sent.
+        """ After initialization, self.hearbeat will be the timestamp of the last heartbeat sent.
         Monitor it to tell if the client has gone away.
         :return: None
         """
