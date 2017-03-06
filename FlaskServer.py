@@ -148,8 +148,8 @@ class ClientManager(object):
 
     def __init__(self, name):
         self.name = name
-        # initializing this to 0 for now meaning no heartbeats/data yet received
-        self.current_heartbeat = 0
+        # treat the initialization as the first heartbeat
+        self.current_heartbeat = time.time()
         self.current_data = 0
         # how do we make sure we're not writing the same data twice?
         self.previous_data = 0
@@ -178,7 +178,7 @@ class ClientManager(object):
         # because it *IS* 0 at some point
         while True:
             time.sleep(1)
-            if self.current_heartbeat != 0 and self.active:
+            if self.active:
                 now = time.time()
                 while abs(now - self.current_heartbeat) > elapsed:
                     log.info("The client {} hasn't sent a heartbeat in over {} seconds."
@@ -194,6 +194,7 @@ class ClientManager(object):
 
                     # can't recover after this, so we might as well exit this thread
                     return
+
 
     def data_monitor(self):
         """ While the client is considered active, write the process info data to a file.
@@ -216,6 +217,10 @@ if __name__ == "__main__":
     server.start()
     log.warning("Server started here.")
 
+    # shutdown_thread watches for whether the shutdown event has been set.
+    # auto shutdown monitors for whether the first_request event has been set. if it's never set,
+    # it set's the shutdown event.
+    # print_report_thread watches for when the server has finished shutting down, so it can print report
     shutdown_thread = threading.Thread(target=app.shutdown_monitor, args=(server,))
     auto_shutdown_thread = threading.Thread(target=app.auto_shutdown)
     print_report_thread = threading.Thread(target=print_report, args=(is_shutdown,))

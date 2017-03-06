@@ -33,17 +33,16 @@ class CustomFlask(Flask):
         """ If there are active clients, just sleep and start over; if not, enter shutdown timer.
         """
         while True:
+            time.sleep(10)
             active_clients = self.check_active_clients()
             if not active_clients:
                 self.shutdown_timer()
-            time.sleep(10)
 
     def shutdown_timer(self):
         """ If there are no active clients, run for a configurable length of time and then shut down.
         """
         active_clients = self.check_active_clients()
         start = time.time()
-        time.sleep(10)
         elapsed = 0
         self.log.warning("Entering shutdown timer.")
         while not active_clients and elapsed < self.final_wait:

@@ -112,7 +112,7 @@ def assert_rollover(chunk_size, max_size, interval, runtime, desired_rollovers=2
     # a write size of 2 and file size of 5 means files will get filled to 2*2 = 4
     writes_per_file = max_size / chunk_size
 
-    writes = runtime / interval - 1
+    writes = runtime / interval
 
     if writes > writes_per_file * desired_rollovers:
         return True
