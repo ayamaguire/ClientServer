@@ -42,8 +42,9 @@ learned Mock/MagicMock -- but I didn't quite get there.
 I got information using psutils, but I didn't break it out very much or make it more human readable.
 I would have, but making the shutdown clean ended up taking priority.
 
-The first time we open a new data file, we say we are "Rolling over a new data file". Not exactly
-False, but not True either. Could be fixed.
+On my machine, when I kill the clients in the middle of running, the server just keeps chugging.
+On linux, it spits out an ugly "Broken Pipe" error... then keeps chugging. I found this late stage and
+am not going to fix it now.
 
 
 Fun things to do:
