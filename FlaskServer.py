@@ -92,7 +92,6 @@ def map_requests(request_data, client_conns_dict):
         log.info("Client {} sent some data: {}".format(request_data["name"],
                                                        request_data["data"]))
     if request_data["signal"] == 2:
-
         # this isn't really a warning, but it makes it pop up on the console
         log.warning("Client {} says {}".format(request_data["name"],
                                                request_data["data"]))
@@ -103,14 +102,12 @@ def map_requests(request_data, client_conns_dict):
             report["total_goodbyes"].increment()
 
     if request_data["signal"] == 0 and client.active:
-
         # we don't need to keep looking for heartbeats if we received a goodbye
         client.current_heartbeat = request_data["time"]
         log.info("Client {} sent a heartbeat at time {}".format(request_data["name"],
                                                                 request_data["time"]))
 
 
-# This is the messiest thing in this whole project. :/
 @app.route("/", methods=['POST', 'GET'])
 def request_handler():
     """ Function for handling the requests that are sent to the server.

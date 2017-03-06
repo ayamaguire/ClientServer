@@ -1,5 +1,5 @@
 {
   "port": 8000,
-  "timeout": 30,
+  "timeout": 120,
   "final_wait": 30
 }

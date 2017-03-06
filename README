@@ -18,9 +18,9 @@ python requester.py
 You can manage various settings in the configuration json files.
 
 Some info:
-- The server is a simple Flask server. By default it launches on port 5000. If you change the setting
+- The server is a simple Flask server. By default it launches on port 8000. If you change the setting
     in the server file, change it in the clients file too.
-- The server uses threads and one to manage stuff; the client uses processes.
+- The server uses threads and one process to manage stuff; the client uses processes.
 - Everything is sent to the server via a request. Hearbeats, data, etc.
 - Processes are monitored using psutil.
 
@@ -29,9 +29,6 @@ Things I didn't do, don't understand, or would make better with more time:
 p.join() on my processes appeared to halt the running of the other processes. Not what I want at all.
 Since they ended on their own, I didn't worry about it too much.
 
-Sometimes the shutdown timer starts and prints a couple of messages before it successfully realizes
-that there are still connections and exits the timer. These messages are a bit confusing, but harmless.
-
 The server I am using is a Flask server with a few extra methods for handling shutdown and monitoring
 whether there are still client connections. I think it's a little clunky, but it works.
 
@@ -39,7 +36,8 @@ I ran a stress test with 50 clients... it works but getting the clients up and g
 Then again, who wants to run 50 clients locally to write chunks of data...? :)
 
 I tested this a lot manually by just running everything and breaking things into smaller pieces which
-were testable. However, I am lacking official unit tests. :(
+were testable. However, I am lacking official unit tests for many things. With more time, I would have
+learned Mock/MagicMock -- but I didn't quite get there.
 
 I got information using psutils, but I didn't break it out very much or make it more human readable.
 I would have, but making the shutdown clean ended up taking priority.

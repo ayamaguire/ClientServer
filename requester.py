@@ -33,7 +33,6 @@ log.info("Logger for clients")
 STATUS_UP_CODES = [200, 201, 202, 203, 204, 205, 206]
 
 
-
 # Helper functions!
 
 def files_gen(base_name):
