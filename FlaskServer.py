@@ -33,28 +33,82 @@ with open("FlaskServer_config.json", 'r') as c:
 TIMEOUT = config["timeout"]
 PORT = config["port"]
 FINAL_WAIT = config["final_wait"]
-
-
 CCs = {}
+
 first_request = Event()
+shutdown = Event()
 is_shutdown = Event()
 report = {"total_requests": Counter(0),
           "total_connections": Counter(0),
           "total_timeouts": Counter(0),
           "total_goodbyes": Counter(0)}
 
-app = CustomFlask(__name__, CCs, FINAL_WAIT, log, first_request, is_shutdown)
+app = CustomFlask(__name__, CCs, FINAL_WAIT, log, first_request, shutdown, is_shutdown)
 app.debug = False
 app.use_reloader=False
 
 
 def print_report(is_shutdown_event):
+    """ Monitor whether the given event has been set; if so, print out the usage report.
+    :param multiprocessing.Event is_shutdown_event: Event instance which says whether the server has
+    been shutdown
+    """
     while not is_shutdown_event.is_set():
         time.sleep(10)
     report_to_print = {}
     for key, val in report.items():
         report_to_print[key] = val.value()
     log.warning("Usage report: {}".format(report_to_print))
+
+
+def assert_request_format(request_data):
+    if "name" and "time" and "signal" and "data" in request_data.keys():
+        return True
+    else:
+        log.warning("A bad request was received! Request will be discarded. Request: {}"
+                    .format(request_data))
+        return False
+
+
+def map_requests(request_data, client_conns_dict):
+
+    good_request = assert_request_format(request_data)
+    if not good_request:
+        return
+
+    if request_data["name"] not in client_conns_dict.keys():
+
+        # is it weird to store objects in a dictionary?
+        # I dunno, I feel like this made everything less readable
+        # Something about this whole thing is weird, but it works? Can we talk about it??
+        client_conns_dict[request_data["name"]] = ClientManager(request_data["name"])
+        client = client_conns_dict[request_data["name"]]
+        report["total_connections"].increment()
+    else:
+        client = client_conns_dict[request_data["name"]]
+    if request_data["signal"] == 1:
+
+        client.current_data = request_data["data"]
+        log.info("Client {} sent some data: {}".format(request_data["name"],
+                                                       request_data["data"]))
+    if request_data["signal"] == 2:
+
+        # this isn't really a warning, but it makes it pop up on the console
+        log.warning("Client {} says {}".format(request_data["name"],
+                                               request_data["data"]))
+
+        # Set the client to inactive, since it told us so politely
+        if request_data["data"] == "Goodbye.":
+            client.active = False
+            report["total_goodbyes"].increment()
+
+    if request_data["signal"] == 0 and client.active:
+
+        # we don't need to keep looking for heartbeats if we received a goodbye
+        client.current_heartbeat = request_data["time"]
+        log.info("Client {} sent a heartbeat at time {}".format(request_data["name"],
+                                                                request_data["time"]))
+
 
 # This is the messiest thing in this whole project. :/
 @app.route("/", methods=['POST', 'GET'])
@@ -63,55 +117,28 @@ def request_handler():
     :return: Sets what to display on the browser at our server's port. This doesn't matter.
     """
     # ideally there would be a way to avoid setting this every time there's a new request
-    # it doesn't matter, just a wasted operation.
-    first_request.set()
+    # it doesn't really matter, just a wasted operation.
+    if not first_request.is_set():
+        first_request.set()
     report["total_requests"].increment()
 
-    rdata = request.data
-    if len(rdata) == 0:
+    # if the request had zero length, it's probably the client code making sure the server is up.
+    # Or it's someone refreshing the browser page. Stop that, it tickles!
+    if len(request.data) == 0:
         log.info("Received a zero length request. Nothing to do here.")
         return "Hi"
 
     # if we sent a nonzero request, it should be in json format
     try:
-        rdata = json.loads(rdata)
+        request_data = json.loads(request.data)
     except ValueError as e:
         log.error("A malformed request was received! error: {}".format(e))
         raise
 
-    # make sure the request has the right format
-    try:
-        rname = rdata["name"]
-        rtime = rdata["time"]
-        rsignal = rdata["signal"]
-        rdata = rdata["data"]
-    except KeyError as e:
-        log.error("A request with incomplete information was sent! error: {}".format(e))
-        raise
+    # go confirm that the request was correctly formatted, and then do stuff with it
+    map_requests(request_data, CCs)
 
-    if rname not in CCs.keys():
-
-        # is it weird to store objects in a dictionary?
-        # I dunno, I feel like this made everything less readable
-        # Something about this whole thing is weird, but it works? Can we talk about it??
-        CCs[rname] = ClientManager(rname)
-        report["total_connections"].increment()
-    if rsignal == 1:
-        CCs[rname].current_data = rdata
-        log.info("Client {} sent some data: {}".format(rname, rdata))
-    if rsignal == 2:
-        # this isn't really a warning, but it makes it pop up on the console
-        log.warning("Client {} says {}".format(rname, rdata))
-
-        # Set the client to inactive, since it told us so politely
-        if rdata == "Goodbye.":
-            CCs[rname].active = False
-            report["total_goodbyes"].increment()
-    if rsignal == 0 and CCs[rname].active:
-        # we don't need to keep looking for heartbeats if we received a goodbye
-        CCs[rname].current_heartbeat = rtime
-        log.info("Client {} sent a heartbeat at time {}".format(rname, rtime))
-
+    # it must return :/ if I understood Flask and requests better I could make this make more sense.
     return "Hello"
 
 
@@ -150,6 +177,7 @@ class ClientManager(object):
         # this is clunky... I can't do "while self.current_heartbeat != 0"
         # because it *IS* 0 at some point
         while True:
+            time.sleep(1)
             if self.current_heartbeat != 0 and self.active:
                 now = time.time()
                 while abs(now - self.current_heartbeat) > elapsed:
@@ -182,7 +210,6 @@ class ClientManager(object):
 
 
 if __name__ == "__main__":
-
     # Start up the server in a process, and then send that process to the shutdown monitors.
     # This way we can kill it.
     server = Process(target=app.run_with_monitors, kwargs={'port': PORT})

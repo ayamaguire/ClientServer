@@ -1,21 +1,20 @@
 import time
-from multiprocessing import Event, Value, Lock
+from multiprocessing import Value, Lock
 import threading
 from flask import Flask
-
-shutdown = Event()
-
 
 
 class CustomFlask(Flask):
     """ Essentially just a Flask server, but with a few extra methods for shutting down.
     """
 
-    def __init__(self, name, client_conns_dict, final_wait, log, first_request, is_shutdown_event):
+    def __init__(self, name, client_conns_dict, final_wait, log, first_request,
+                 shutdown_event, is_shutdown_event):
         self.CC = client_conns_dict
         self.final_wait = final_wait
         self.log = log
         self.first_request = first_request
+        self.shutdown_event = shutdown_event
         self.is_shutdown_event = is_shutdown_event
         super(CustomFlask, self).__init__(name)
 
@@ -55,7 +54,7 @@ class CustomFlask(Flask):
         if not active_clients and abs(start - time.time()) >= self.final_wait:
             self.log.warning("There have been no new connections for the final timeout {} seconds"
                         .format(self.final_wait))
-            shutdown.set()
+            self.shutdown_event.set()
             return
 
     def check_active_clients(self):
@@ -78,7 +77,7 @@ class CustomFlask(Flask):
         """
         while True:
             time.sleep(10)
-            if shutdown.is_set():
+            if self.shutdown_event.is_set():
                 self.log.warning("Shutting down server.")
                 servproc.terminate()
                 servproc.join()
@@ -96,7 +95,7 @@ class CustomFlask(Flask):
             if abs(start - time.time()) >= self.final_wait:
                 self.log.warning("No connections were received before the final wait time of {} seconds."
                                  " Shutting down.".format(self.final_wait))
-                shutdown.set()
+                self.shutdown_event.set()
                 return
 
         # if first_request got set, let's get out of this thread

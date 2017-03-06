@@ -30,6 +30,9 @@ log.addHandler(ch)
 
 log.info("Logger for clients")
 
+STATUS_UP_CODES = [200, 201, 202, 203, 204, 205, 206]
+
+
 
 # Helper functions!
 
@@ -49,11 +52,12 @@ def files_gen(base_name):
 
 def get_next_file(current_file, base_name, chunk_size, max_size, gen):
     """ Determine if it's time to roll over to the next file, knowing the size of the next write
+    :param str current_file: the text string of the name of the current file
     :param str base_name: the naming schema for the file
     :param int chunk_size: the number of byes being written at a time
     :param int max_size: the max size of the file
     :param generator gen: the instantiation of the generator which counts up files
-    :return (str, bool, f): the file to write to, whether we rolled over or not, and the generator
+    :return (str, bool): the file to write to, whether we rolled over or not
     """
     rolling = False
 
@@ -94,7 +98,7 @@ def write_and_roll(write_file, base_name, chunk_size, max_size, gen):
     return current_file, rolling
 
 
-def assert_rollover(chunk_size, max_size, interval, runtime):
+def assert_rollover(chunk_size, max_size, interval, runtime, desired_rollovers=2):
     # move over once, move over twice
     # come on honey don't be cold as ice
     """ Determine if we will write enough data to roll over the datafiles twice
@@ -102,6 +106,7 @@ def assert_rollover(chunk_size, max_size, interval, runtime):
     :param int max_size: the max size of the files
     :param int interval: how many seconds to wait between writes
     :param int runtime: how many seconds to run for
+    :param int desired_rollovers: how many times the data files should roll over
     :return bool: Whether or not we will roll over at least twice
     """
     # a write size of 2 and file size of 5 means files will get filled to 2*2 = 4
@@ -109,7 +114,7 @@ def assert_rollover(chunk_size, max_size, interval, runtime):
 
     writes = runtime / interval - 1
 
-    if writes > writes_per_file * 2:
+    if writes > writes_per_file * desired_rollovers:
         return True
     else:
         return False
@@ -146,12 +151,17 @@ def get_proc_info(proc):
         raise
 
 
+class FlaskServerNotUp(BaseException):
+    pass
+
+
 class RequestClient(object):
     """ A class for initializing a client which will send heartbeats, write data, and monitor the
     process which sends data.
     """
 
-    def __init__(self, name, runtime=120, chunk_size=1000, file_size=1000, data_interval=10):
+    def __init__(self, name, url, runtime=120, chunk_size=1000, file_size=1000, data_interval=10,
+                 rollovers=2):
         self.name = name
         self.runtime = runtime
         self.start = time.time()
@@ -160,7 +170,10 @@ class RequestClient(object):
             log.warning("The given chunk size for client {} is smaller than 10MB.".format(self.name))
         self.file_size = file_size
         self.data_interval = data_interval
+        self.url = url
+        self.rollovers = rollovers
         self.current_file = None
+        self.end_data_tunnel = multiprocessing.Event()
 
         self.base_name = 'data_{}'.format(self.name)
         self.gen = files_gen(self.base_name)
@@ -168,9 +181,10 @@ class RequestClient(object):
         if not assert_rollover(chunk_size=self.chunk_size,
                                max_size=self.file_size,
                                interval=self.data_interval,
-                               runtime=self.runtime):
-            log.warning("The client {} is not configured to write at least two data files!"
-                        .format(self.name))
+                               runtime=self.runtime,
+                               desired_rollovers=self.rollovers):
+            log.warning("The configuration for {} does not meet the specified rollover "
+                        "requirements ({}).".format(self.name, self.rollovers))
 
     def run(self):
         """ Kick off heartbeats, data writer, and data writer monitor in separate processes
@@ -195,13 +209,17 @@ class RequestClient(object):
         payload = json.dumps({"name": self.name,
                               "signal": signal,
                               "time": now, "data": data})
-        requests.post(URL, data=payload)
+        r = requests.post(self.url, data=payload)
+        if r.status_code not in STATUS_UP_CODES:
+            log.error("Attempted to send data at time: {} but received status code: {}"
+                      .format(now, r.status_code))
+            raise FlaskServerNotUp
         if signal == 0:
             log.debug("Sending heartbeat for time {}".format(now))
         elif signal == 1:
             log.debug("Sending data for time {}. Data: {}".format(now, data))
         elif signal ==2:
-            log.debug("Sending client information for time: {}. Information: ".format(now, data))
+            log.debug("Sending client information for time: {}. Information: {}".format(now, data))
         else:
             log.debug("An unrecognized signal was sent! Signal: {}. Data: {}".format(signal, data))
 
@@ -211,8 +229,10 @@ class RequestClient(object):
         while abs(self.start - time.time()) < self.runtime:
             time.sleep(5)
             self.send_request(signal=0, data="Heartbeat")
-        # wait ten seconds in case other processes need to finish.
-        time.sleep(10)
+
+        # to avoid race conditions, we wait until the monitor thread says it's done
+        while not self.end_data_tunnel.is_set():
+            time.sleep(1)
         self.send_request(signal=2, data="Goodbye.")
 
     def data(self):
@@ -221,11 +241,12 @@ class RequestClient(object):
         while abs(self.start - time.time()) < self.runtime:
             time.sleep(self.data_interval)
 
-            log.info("Writing {} byes of data".format(self.chunk_size))
+            log.info("{} - Writing {} byes of data".format(self.name, self.chunk_size))
             self.current_file, rolling = write_and_roll(self.current_file, self.base_name,
-                                                        self.chunk_size, self.file_size, self.gen)
+                                                        self.chunk_size, self.file_size,
+                                                        self.gen)
             if rolling:
-                log.info("Rolling over a new file.")
+                log.info("{} - Rolling over a new file.".format(self.name))
                 self.send_request(signal=2, data="Data writer has rolled over to a new file.")
 
     def send_proc_info(self, proc):
@@ -245,6 +266,7 @@ class RequestClient(object):
         while abs(self.start - time.time()) < self.runtime:
             time.sleep(10)
             self.send_proc_info(proc)
+        self.end_data_tunnel.set()
 
 if __name__ == "__main__":
 
@@ -254,13 +276,14 @@ if __name__ == "__main__":
 
     PORT = config["port"]
     URL = 'http://127.0.0.1:{}'.format(PORT)
+    ROLLOVERS = config["desired_rollovers"]
 
     # Make sure the given port is correct
     try:
         r = requests.get(URL)
-        if r.status_code != 200:
+        if r.status_code not in STATUS_UP_CODES:
             log.error("Server appears to not be up! Status code {} received.".format(r.status_code))
-            raise StandardError
+            raise FlaskServerNotUp
     except requests.ConnectionError:
         log.error("Server not up!")
         raise requests.ConnectionError
@@ -279,9 +302,11 @@ if __name__ == "__main__":
     for i in range(config["count"]):
         clients.append(RequestClient(
             name=config["info"]["names"][i],
+            url=URL,
             runtime=config["info"]["run_times"][i],
             chunk_size=config["info"]["chunk_sizes"][i],
-            file_size=config["info"]["file_sizes"][i]
+            file_size=config["info"]["file_sizes"][i],
+            rollovers=ROLLOVERS
         ))
 
     # run them all!

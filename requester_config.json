@@ -1,6 +1,7 @@
 {
   "port": 8000,
   "count": 3,
+  "desired_rollovers": 2,
   "info": {
     "names": [
       "client0",
@@ -8,14 +9,14 @@
       "client2"
     ],
     "run_times": [
-      120,
-      120,
-      120
+      30,
+      30,
+      30
     ],
     "chunk_sizes": [
       10000000,
-      10000000,
-      10000000
+      11000000,
+      12000000
     ],
     "file_sizes": [
       60000000,
